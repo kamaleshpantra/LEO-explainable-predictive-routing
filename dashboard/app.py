@@ -4,6 +4,7 @@ import networkx as nx
 
 from edge_ingestion.stream import telemetry_stream
 from edge_ingestion.time_align import TimeAligner
+
 from digital_twin.state_replica import DigitalTwinState
 from digital_twin.forward_evolution import ForwardEvolution
 from digital_twin.rtd import RTDEstimator
@@ -15,6 +16,9 @@ from cloud_ml.gnn_path_selector import SafePathSelector
 
 from explainability.reasoning_object import ReasoningObject
 from explainability.narrative_engine import NarrativeEngine
+
+# 🔽 NEW: logging import
+from logging_observability.logger import InferenceLogger
 
 
 # -------------------- Streamlit Setup --------------------
@@ -37,6 +41,9 @@ link_predictor = LinkBreakPredictor()
 qos_ranker = QoSRanker()
 path_selector = SafePathSelector()
 narrative_engine = NarrativeEngine()
+
+# 🔽 NEW: initialize logger ONCE
+logger = InferenceLogger()
 
 stream = telemetry_stream()
 
@@ -68,14 +75,14 @@ while True:
     features.update(twin_state)
     link_pred = link_predictor.predict(features)
 
-    # Dummy parallel links (demo purpose)
+    # Demo parallel links
     candidates = [
         {"id": "L1", "latency": 30, "bandwidth": 10, "snr": 15, "lifetime": 6},
         {"id": "L2", "latency": 45, "bandwidth": 20, "snr": 10, "lifetime": 9},
     ]
     qos = qos_ranker.rank(candidates)
 
-    # Dummy topology graph
+    # Demo topology
     G = nx.Graph()
     G.add_edge("SAT-A", "SAT-B", latency=20, stability=8, switch_cost=1)
     G.add_edge("SAT-B", "GW-1", latency=25, stability=7, switch_cost=1)
@@ -94,16 +101,29 @@ while True:
     reasoning_dict = reasoning.as_dict()
     narrative = narrative_engine.generate(reasoning_dict)
 
-    # --- Logging ---
+    # -------------------- 🔽 LOGGING (THIS IS THE CODE YOU ASKED ABOUT) --------------------
+    logger.log(
+        aligned_state=twin_state.__dict__,
+        twin_constraints=constraints,
+        ml_outputs={
+            "link_break": link_pred,
+            "qos": qos,
+            "path": path
+        },
+        explanation=narrative,
+        rtd=rtd
+    )
+    # -----------------------------------------------------------------------
+
+    # --- Local observability (dashboard logs) ---
     st.session_state.logs.append({
         "time": time.strftime("%H:%M:%S"),
         "prediction": link_pred,
-        "rtd": rtd
+        "rtd": round(rtd, 3)
     })
     st.session_state.logs = st.session_state.logs[-10:]
 
     # -------------------- UI Rendering --------------------
-
     with col1:
         st.subheader("📡 Physical / Ingested State")
         st.json({
